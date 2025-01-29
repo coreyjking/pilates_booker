@@ -1,0 +1,1 @@
+To get software working, you need to download the chrome driver for windows 64.
