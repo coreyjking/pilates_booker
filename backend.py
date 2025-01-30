@@ -9,8 +9,6 @@ from selenium.webdriver.chrome.options import Options
 
 # Load environment variables
 load_dotenv()
-username = os.getenv('email')
-password = os.getenv('password')
 
 # Set up Chrome options
 chrome_options = Options()
@@ -19,20 +17,31 @@ chrome_options.add_argument('--disable-logging')  # Disable logging
 chrome_options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
 chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Disable logging in console
 
-# Start WebDriver with options
-driver = webdriver.Chrome(options=chrome_options)
-url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
-driver.get(url)
+def start_monitoring(email, password, target_day, target_time):
+    """Main function to start the monitoring process"""
+    # Initialize driver
+    driver = webdriver.Chrome(options=chrome_options)
+    url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
+    driver.get(url)
+    
+    try:
+        print("Starting to monitor the schedule...")
+        while True:
+            confirm_logged_in(driver, email, password)  # Pass credentials
+            booked = check_and_book(driver, target_day, target_time)  # Pass driver
 
-# Get user input
-target_day = input("Enter the target day (YYYY-MM-DD format, e.g., '2025-01-21'): ").strip()
-target_time = input("Enter the target time (e.g., '6:30 AM'): ").strip()
+            if booked:
+                print("Booking successful! Exiting script.")
+                break
 
+            print("Waiting for 30 seconds before rechecking...")
+            time.sleep(30)
 
+    finally:
+        driver.quit()
 
-def restart_driver():
+def restart_driver(driver):
     """Restart the WebDriver session if needed."""
-    global driver
     try:
         driver.quit()
     except:
@@ -40,9 +49,9 @@ def restart_driver():
     driver = webdriver.Chrome(options=chrome_options)
     driver.get(url)
     print("WebDriver restarted.")
+    return driver
 
-
-def check_and_book(target_day, target_time):
+def check_and_book(driver, target_day, target_time):
     """Check for available sessions and attempt booking."""
     try:
         time.sleep(5)
@@ -126,8 +135,7 @@ def check_and_book(target_day, target_time):
         print(f"Error: {e}")
         return False
 
-
-def confirm_logged_in():
+def confirm_logged_in(driver, username, password):
     """Ensure the user is logged in. If not, log in automatically."""
     try:
         # Scroll to top of page and wait for elements to load
@@ -173,21 +181,58 @@ def confirm_logged_in():
         print(f"Login verification error: {e}")
         driver.get(url)
 
-
-# **Main Loop: Monitor & Book Sessions**
-try:
-    print("Starting to monitor the schedule... Press Ctrl+C to stop.")
-
-    while True:
-        confirm_logged_in()  # Ensure user is logged in
-        booked = check_and_book(target_day, target_time)  # Attempt booking
-
-        if booked:
-            print("Booking successful! Exiting script.")
-            break  # Stop after booking is complete
-
-        print("Waiting for 30 seconds before rechecking...")
-        time.sleep(30)  # Retry after delay
-
-finally:
-    driver.quit()
+def get_available_sessions(email, password):
+    """Fetch all available sessions from the website."""
+    driver = webdriver.Chrome(options=chrome_options)
+    url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
+    available_sessions = []
+    
+    try:
+        driver.get(url)
+        confirm_logged_in(driver, email, password)
+        
+        # Wait for sessions to load
+        time.sleep(5)
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        
+        # Find all date sections
+        date_elements = driver.find_elements(By.CSS_SELECTOR, "[class^='date-']")
+        
+        for date_element in date_elements:
+            try:
+                # Extract date from class name
+                date_class = date_element.get_attribute("class")
+                date = date_class.split("date-")[1]
+                
+                # Find sessions for this date
+                sessions = date_element.find_elements(By.XPATH, 
+                    "following-sibling::div[contains(@class, 'bw-session')]")
+                
+                for session in sessions:
+                    try:
+                        time_element = session.find_element(By.CLASS_NAME, "hc_starttime")
+                        session_time = time_element.text.strip()
+                        
+                        # Only add if the session is bookable
+                        book_buttons = session.find_elements(By.CLASS_NAME, "bw-widget__signup-now")
+                        if book_buttons and book_buttons[0].text.strip() == "Book":
+                            available_sessions.append({
+                                'date': date,
+                                'time': session_time
+                            })
+                    except Exception as e:
+                        print(f"Error processing session: {e}")
+                        continue
+                        
+            except Exception as e:
+                print(f"Error processing date: {e}")
+                continue
+                
+        return available_sessions
+        
+    except Exception as e:
+        print(f"Error fetching sessions: {e}")
+        return None
+        
+    finally:
+        driver.quit()
