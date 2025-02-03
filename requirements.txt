@@ -1,6 +1,5 @@
-time,
-os,
-selenium,
-dotenv,
-streamlit>=1.28.0,
+selenium
+python-dotenv
+streamlit>=1.28.0
+webdriver-manager
 

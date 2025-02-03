@@ -1,0 +1,5 @@
+chrome-win64/
+__pycache__/
+book.png
+confirm.png
+.venv/
