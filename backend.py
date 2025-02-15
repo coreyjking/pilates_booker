@@ -1,25 +1,11 @@
 import time
 import os
-from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from UI import driver
-
-# Load environment variables
-load_dotenv()
-username = os.getenv('email')
-password = os.getenv('password')
-
-# Set up Chrome options
-chrome_options = Options()
-chrome_options.add_argument('--headless')
-chrome_options.add_argument('--log-level=3')  # Set log level to ERROR only
-chrome_options.add_argument('--disable-logging')  # Disable logging
-chrome_options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
-chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Disable logging in console
 
 # Start WebDriver with options
 url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
@@ -28,6 +14,74 @@ driver.get(url)
 # Get user input
 target_day = input("Enter the target day (YYYY-MM-DD format, e.g., '2025-01-21'): ").strip()
 target_time = input("Enter the target time (e.g., '6:30 AM'): ").strip()
+
+
+def get_available_sessions(email, password):
+    """
+    Collect all available days (date-YYYY-MM-DD) and their session times
+    from the webpage, and return them in a dictionary.
+
+    Example return value:
+    {
+        "2025-01-20": ["5:00 AM", "5:30 AM", ...],
+        "2025-01-21": [...],
+        ...
+    }
+    """
+    # Give the page some time to load and scroll to reveal all day elements
+    time.sleep(5)
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
+    # Wait until at least one day element is present
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (By.XPATH, "//*[contains(@class, 'bw-day') and contains(@class, 'date-')]")
+        )
+    )
+
+    # Find all elements that represent a "day" with class containing 'date-YYYY-MM-DD'
+    date_elements = driver.find_elements(
+        By.XPATH, "//*[contains(@class, 'bw-day') and contains(@class, 'date-')]"
+    )
+
+    # Prepare dictionary to store available sessions per day
+    available_sessions = {}
+
+    # Loop through each day element found
+    for date_elem in date_elements:
+        # Extract the date from the class name (e.g., "date-2025-01-21")
+        classes = date_elem.get_attribute("class").split()
+        the_date = None
+        for c in classes:
+            if c.startswith("date-"):
+                # Strip out "date-" to get the actual date string (YYYY-MM-DD)
+                the_date = c.replace("date-", "")
+                break
+
+        if not the_date:
+            # If for some reason we didn't find a valid date, skip
+            continue
+
+        # Find all session blocks that belong to this date section
+        sessions = date_elem.find_elements(
+            By.XPATH, "following-sibling::div[contains(@class, 'bw-session')]"
+        )
+
+        times_for_date = []
+        for session in sessions:
+            try:
+                # Each session has a time element with class "hc_starttime"
+                time_element = session.find_element(By.CLASS_NAME, "hc_starttime")
+                session_time = time_element.text.strip()
+                times_for_date.append(session_time)
+            except Exception as e:
+                print(f"Skipping a malformed session element: {e}")
+
+        # Store the collected times in the dictionary for this date
+        available_sessions[the_date] = times_for_date
+
+    return available_sessions
+
 
 
 def check_and_book(target_day, target_time):
@@ -143,7 +197,7 @@ def confirm_logged_in():
                 password_input = driver.find_element(By.ID, "password")
                 submit_button = driver.find_element(By.XPATH, "/html/body/div[1]/span/div/div/div/main/div/div/form/section[2]/button")
 
-                username_input.send_keys(username)
+                username_input.send_keys(email)
                 password_input.send_keys(password)
                 submit_button.click()
                 time.sleep(4)

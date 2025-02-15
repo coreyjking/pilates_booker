@@ -1,12 +1,12 @@
 #!/bin/bash
+# Convert the script to use Unix line endings if necessary
+sed -i 's/\r$//' "$0"
 
-echo "Starting Selenium..."
-java -jar /opt/selenium/selenium-server.jar standalone --host 0.0.0.0 &
-
-SELENIUM_URL="http://0.0.0.0:4444/status"
+echo "Connecting to Selenium..."
+#java -jar /opt/selenium/selenium-server.jar standalone --host 0.0.0.0 &
 
 echo "Waiting for Selenium to be ready..."
-while ! curl -sSf $SELENIUM_URL > /dev/null; do
+while ! curl -sSf "$SELENIUM_URL/status" > /dev/null; do
     echo "Selenium is not ready yet, retrying..."
     sleep 2
 done

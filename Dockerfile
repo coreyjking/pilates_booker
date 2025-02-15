@@ -12,6 +12,7 @@ COPY . .
 # Copy the startup script
 COPY start.sh /app/start.sh
 COPY setup.sh /app/setup.sh
+COPY my_entrypoint.sh /app/my_entrypoint.sh
 
 # Change permissions for the entire /app folder so that all files become executable
 RUN chmod -R +x /app
@@ -36,13 +37,13 @@ RUN python3 -m venv /app/venv \
 #RUN /app/setup.sh
 
 # Change ownership of /app so that the non-root user can write to it
-#RUN chown -R 1200:1200 /app
+#RUN chown -R 1200:1200 /app && chown -R 1200:1200 /app/venv
 
 # Switch back to the non-root user (default in Selenium image)
 USER 1200
 
 # Set environment variables for Chrome & Selenium
-ENV SELENIUM_REMOTE_URL=http://localhost:4444/status
+ENV SELENIUM_URL=http://127.0.0.1:4444
 ENV DISPLAY=:99
 
 # Ensure the Python virtual environment is used globally
@@ -59,4 +60,4 @@ COPY .streamlit/credentials.toml ~/.streamlit/
 EXPOSE 8080
 
 # Start the Streamlit application using the script
-CMD ["/app/start.sh"]
+CMD ["bash", "/app/my_entrypoint.sh"]
