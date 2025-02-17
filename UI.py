@@ -12,29 +12,17 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
-#Setup
-#Get selenium URL set in dockerfile - this is an env file on the container, where this script will be running
-SELENIUM_WEBDRIVER_URL = f'{os.getenv("SELENIUM_URL")}/wd/hub'
 url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
-chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
-chrome_options.add_argument("--headless")
-chrome_path = "/usr/bin/google-chrome"  # Path to Chrome binary
-driver_path = "/usr/bin/chromedriver"  # Path to Chromedriver
-service = Service(driver_path)
-chrome_options.binary_location = chrome_path
 
-
-# Ensure Chromium and Chromedriver are installed
+### INSTALL THE WEBDRIVER
 @st.cache_resource
 def get_webdriver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Run without a UI
     chrome_options.add_argument("--no-sandbox")  
     chrome_options.add_argument("--disable-dev-shm-usage")  
-    chrome_options.add_argument("--disable-gpu")  # Optional: Improve performance
-    chrome_options.add_argument("--window-size=1920x1080")  # Ensure consistent rendering
+    #chrome_options.add_argument("--disable-gpu")  # Optional: Improve performance
+    #chrome_options.add_argument("--window-size=1920x1080")  # Ensure consistent rendering
 
     try:
         driver = webdriver.Chrome(service=webdriver.ChromeService(ChromeDriverManager().install()), options=chrome_options)
@@ -43,15 +31,6 @@ def get_webdriver():
     except Exception as e:
         st.error(f"Error initializing Selenium WebDriver: {e}")
         return None
-
-# Get the WebDriver
-driver = get_webdriver()
-
-# Check if the driver was initialized successfully
-if driver:
-    st.success("✅ Selenium WebDriver is ready!")
-else:
-    st.error("❌ Failed to initialize Selenium WebDriver. Check logs.")
 
 
 def get_available_sessions(email, password):
@@ -315,10 +294,7 @@ if 'driver' not in st.session_state:
 if not st.session_state['driver']:
     for attempt in range(10):  # Try up to 10 times
         try:
-            st.session_state['driver'] = webdriver.Remote(
-                command_executor=SELENIUM_WEBDRIVER_URL,
-                options=chrome_options
-            )
+            st.session_state['driver'] = get_webdriver()
             print("✅ Python connected to Selenium WebDriver successfully!", file=sys.stderr, flush=True)
             print(st.session_state['driver'], file=sys.stderr, flush=True)
             break
