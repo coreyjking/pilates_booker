@@ -26,6 +26,34 @@ service = Service(driver_path)
 chrome_options.binary_location = chrome_path
 
 
+# Ensure Chromium and Chromedriver are installed
+@st.cache_resource
+def get_webdriver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Run without a UI
+    chrome_options.add_argument("--no-sandbox")  
+    chrome_options.add_argument("--disable-dev-shm-usage")  
+    chrome_options.add_argument("--disable-gpu")  # Optional: Improve performance
+    chrome_options.add_argument("--window-size=1920x1080")  # Ensure consistent rendering
+
+    try:
+        driver = webdriver.Chrome(service=webdriver.ChromeService(ChromeDriverManager().install()), options=chrome_options)
+        st.session_state['driver'] = driver
+        return driver
+    except Exception as e:
+        st.error(f"Error initializing Selenium WebDriver: {e}")
+        return None
+
+# Get the WebDriver
+driver = get_webdriver()
+
+# Check if the driver was initialized successfully
+if driver:
+    st.success("✅ Selenium WebDriver is ready!")
+else:
+    st.error("❌ Failed to initialize Selenium WebDriver. Check logs.")
+
+
 def get_available_sessions(email, password):
     """
     Collect all available days (date-YYYY-MM-DD) and their session times
@@ -254,26 +282,23 @@ def check_and_book(selected_date_string, selected_time):
 def check_and_book_loop():
     # Create a placeholder widget to show status updates
     status_placeholder = st.empty()
-    try:
-        status_placeholder.info("Starting to monitor the schedule... Press Ctrl+C to stop.")
-        while True:
-            # Ensure the user is logged in
-            confirm_logged_in()
-            
-            # Update status before each check
-            status_placeholder.info("Checking for available sessions...")
-            
-            booked = check_and_book(st.session_state['selected_date_string'], st.session_state['selected_time'])
-            
-            if booked:
-                status_placeholder.success("Booking successful! Exiting script.")
-                break  # Stop after booking is complete
+    status_placeholder.info("Starting to monitor the schedule... Press Ctrl+C to stop.")
+    while True:
+        # Ensure the user is logged in
+        confirm_logged_in()
+        
+        # Update status before each check
+        status_placeholder.info("Checking for available sessions...")
+        
+        booked = check_and_book(st.session_state['selected_date_string'], st.session_state['selected_time'])
+        
+        if booked:
+            status_placeholder.success("Booking successful! Exiting script.")
+            break  # Stop after booking is complete
 
-            # Update the placeholder to show waiting status before the next check
-            status_placeholder.info("No booking available yet. Waiting 30 seconds before rechecking...")
-            time.sleep(30)  # Retry after delay
-    finally:
-        driver.quit()
+        # Update the placeholder to show waiting status before the next check
+        status_placeholder.info("No booking available yet. Waiting 30 seconds before rechecking...")
+        time.sleep(30)  # Retry after delay
 
 
 #Information for AI:
