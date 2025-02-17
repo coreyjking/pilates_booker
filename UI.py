@@ -10,6 +10,7 @@ from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from webdriver_manager.core.utils import ChromeType
 from webdriver_manager.chrome import ChromeDriverManager
 
 url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
@@ -25,7 +26,10 @@ def get_webdriver():
     #chrome_options.add_argument("--window-size=1920x1080")  # Ensure consistent rendering
 
     try:
-        driver = webdriver.Chrome(service=webdriver.ChromeService(ChromeDriverManager().install()), options=chrome_options)
+        service = Service(
+        ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+        )
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         st.session_state['driver'] = driver
         return driver
     except Exception as e:
