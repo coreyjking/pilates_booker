@@ -157,9 +157,15 @@ def confirm_logged_in():
 
 
 def get_upcoming_dates():
-    # Query upcoming dates
+    # Format matching DynamoDB partition key
+    start_date = datetime.now().strftime('%Y-%m-%d %I:%M %p')
+    end_date = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %I:%M %p')
+
+    print(f"Querying between: {start_date} and {end_date}")
+
+    # Query DynamoDB
     response = table.query(
-        KeyConditionExpression=Key('booking_timestamp').between(datetime.now().strftime('%Y-%m-%d'), (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), )
+        KeyConditionExpression=Key('booking_timestamp').between(start_date, end_date)
     )
     
     # Extract dates from the response
