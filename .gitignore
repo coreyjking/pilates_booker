@@ -2,3 +2,5 @@ chrome-win64/
 .venv/
 .env
 /__pycache__
+.streamlit/secrets.toml
+secrets.toml
