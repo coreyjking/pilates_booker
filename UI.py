@@ -19,7 +19,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 API_GATEWAY_URL = "https://0wk32adhz8.execute-api.ap-southeast-2.amazonaws.com/pilatesStage/schedule_booker"
 url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
-dynamodb = boto3.resource('dynamodb', region_name='ap-southeast-2')
+aws_access_key = st.secrets["aws"]["aws_access_key_id"]
+aws_secret_key = st.secrets["aws"]["aws_secret_access_key"]
+region = st.secrets["aws"]["region_name"]
+dynamodb = boto3.resource('dynamodb', region_name=region, aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key)
 table = dynamodb.Table('pilatesBookings')
     
 ### INSTALL THE WEBDRIVER
@@ -156,7 +159,7 @@ def confirm_logged_in():
 def get_upcoming_dates():
     # Query upcoming dates
     response = table.query(
-        KeyConditionExpression=Key('booking_timestamp').between(datetime.now().strftime('%Y-%m-%d'), (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'))
+        KeyConditionExpression=Key('booking_timestamp').between(datetime.now().strftime('%Y-%m-%d'), (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), )
     )
     
     # Extract dates from the response
