@@ -162,7 +162,7 @@ def get_upcoming_dates():
     melbourne_tz = pytz.timezone('Australia/Melbourne')
     current_time = datetime.now(melbourne_tz)
     
-    # Format booking_date (partition key) as YYYY-MM-DD
+    # Format scheduled_date (partition key) as YYYY-MM-DD
     start_date = current_time.strftime('%Y-%m-%d')
     end_date = (current_time + timedelta(days=30)).strftime('%Y-%m-%d')
     
@@ -171,10 +171,10 @@ def get_upcoming_dates():
     
     print(f"Querying between: {start_date} ({start_timestamp}) and {end_date}")
 
-    # Query using partition key (booking_date) and sort key (booking_timestamp)
+    # Query using partition key (scheduled_date) and sort key (booking_timestamp)
     response = table.query(
         KeyConditionExpression=(
-            Key('booking_date').between(start_date, end_date) &
+            Key('scheduled_date').between(start_date, end_date) &
             Key('booking_timestamp').gte(start_timestamp)
         )
     )
