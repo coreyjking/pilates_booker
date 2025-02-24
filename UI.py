@@ -162,28 +162,22 @@ def get_upcoming_dates():
     melbourne_tz = pytz.timezone('Australia/Melbourne')
     current_time = datetime.now(melbourne_tz)
     
-    # Format scheduled_date (partition key) as YYYY-MM-DD
+    # Format scheduled_date (sort key) as YYYY-MM-DD
     start_date = current_time.strftime('%Y-%m-%d')
     end_date = (current_time + timedelta(days=30)).strftime('%Y-%m-%d')
     
-    # Format booking_timestamp (sort key) as YYYY-MM-DD H:MM AM/PM
-    start_timestamp = current_time.strftime('%Y-%m-%d %I:%M %p')
-    
-    print(f"Querying between: {start_date} ({start_timestamp}) and {end_date}")
+    print(f"Querying bookings for: {st.session_state["email"]} between {start_date} and {end_date}")
 
-    # Query using partition key (scheduled_date) and sort key (booking_timestamp)
+    # Query using partition key (email) and sort key (scheduled_date)
     response = table.query(
-        KeyConditionExpression=(
-            Key('scheduled_date').between(start_date, end_date) &
-            Key('booking_timestamp').gte(start_timestamp)
-        )
+        KeyConditionExpression=Key('email').eq(st.session_state["email"]) & Key('scheduled_date').between(start_date, end_date)
     )
     
-    # Extract dates from the response
-    dates = [item['booking_timestamp'] for item in response['Items']]
+    # Extract booking timestamps from the response
+    dates = [item['booking_timestamp'] for item in response.get('Items', [])]
     
     return dates
-    
+
     
 #Information for AI:
 #<div class="bw-widget__date date-2025-02-15">Saturday, February 15</div>
