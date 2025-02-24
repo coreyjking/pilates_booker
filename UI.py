@@ -270,8 +270,8 @@ if 'available_sessions' in st.session_state:
                 payload = {
                     "email": "mae.anuc@gmail.com",
                     "password": "Mind2907",
-                    "scheduled_date_str": "2025-02-24",
-                    "scheduled_time_str": "6:30 AM"
+                    "scheduled_date_str": selected_date_string,
+                    "scheduled_time_str": selected_time
                 }
 
                 response = requests.post(
