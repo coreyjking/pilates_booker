@@ -2,7 +2,11 @@ import os
 import sys
 import streamlit as st
 import time
-from datetime import datetime
+import requests
+import json
+import boto3
+from boto3.dynamodb.conditions import Key
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -13,6 +17,7 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.core.os_manager import ChromeType
 from webdriver_manager.chrome import ChromeDriverManager
 
+API_GATEWAY_URL = "https://0wk32adhz8.execute-api.ap-southeast-2.amazonaws.com/pilatesStage/schedule_booker"
 url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
 
 ### INSTALL THE WEBDRIVER
@@ -146,144 +151,21 @@ def confirm_logged_in():
         driver.get(url)
 
 
-def check_and_book(selected_date_string, selected_time):
-    # Wait for the date elements to be present in the DOM
-    WebDriverWait(driver, 30).until(
-        EC.presence_of_all_elements_located((By.XPATH, "//div[contains(@class, 'bw-widget__date')]"))
+def get_upcoming_dates():
+    # Connect to DynamoDB
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('pilatesBookings')
+    # Query upcoming dates
+    response = table.query(
+        KeyConditionExpression=Key('booking_timestamp').between(datetime.now().strftime('%Y-%m-%d'), (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'))
     )
-    # Re-query the date elements freshly from the DOM
-    date_elements = driver.find_elements(By.XPATH, "//div[contains(@class, 'bw-widget__date')]")
     
-    selected_date_element = None
-    for elem in date_elements:
-        try:
-            if selected_date_string in elem.text:
-                selected_date_element = elem
-                break
-        except Exception:
-            # Skip if a stale element is encountered
-            continue
-
-    if not selected_date_element:
-        print(f"Could not find date element for: {selected_date_string}", file=sys.stderr, flush=True)
-        return False
-
-    # Extract the class starting with "date-"
-    selected_date_class_element = selected_date_element.get_attribute("class")
-    selected_date = None
-    for cls in selected_date_class_element.split():
-        if cls.startswith("date-"):
-            selected_date = cls
-            break
-
-    if not selected_date:
-        print("Error: No date class found in the selected element.", file=sys.stderr, flush=True)
-        return False
-
-    # ... rest of your function continues here
-
-    try:
-        time.sleep(5)
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        print(f"Looking for session date: {selected_date}", file=sys.stderr, flush=True)
-
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CLASS_NAME, selected_date))
-        )
-        date_section = driver.find_element(By.CLASS_NAME, selected_date)
-
-        # Find all session elements under the correct date
-        sessions = date_section.find_elements(By.XPATH, "following-sibling::div[contains(@class, 'bw-session')]")
-        if not sessions:
-            print(f"No sessions found for {selected_date}.", file=sys.stderr, flush=True)
-            return False
-
-        print(f"Total sessions found for {selected_date}: {len(sessions)}", file=sys.stderr, flush=True)
-
-        for session in sessions:
-            try:
-                # Extract session time
-                time_element = session.find_element(By.CLASS_NAME, "hc_starttime")
-                session_time = time_element.text.strip()
-                print(f"Checking session time: {session_time}", file=sys.stderr, flush=True)
-
-                if session_time == selected_time:
-                    print(f"Session match found for {selected_date} at {session_time}", file=sys.stderr, flush=True)
-
-                    # Locate the "Book" button
-                    book_buttons = session.find_elements(By.CLASS_NAME, "bw-widget__signup-now")
-                    
-                    if not book_buttons:
-                        print("No booking button found for this session", file=sys.stderr, flush=True)
-                        continue
-                    
-                    if book_buttons[0].text.strip() != "Book":
-                        print("Session is not available for booking", file=sys.stderr, flush=True)
-                        continue
-
-                    # Scroll the session into view before clicking
-                    print("Scrolling to booking button...", file=sys.stderr, flush=True)
-                    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", book_buttons[0])
-                    time.sleep(1)  # Wait for scroll to complete
-
-                    print("Found 'Book' button. Proceeding to click.", file=sys.stderr, flush=True)
-                    book_buttons[0].click()
-
-                    # Wait for the iframe to load
-                    WebDriverWait(driver, 20).until(
-                        EC.presence_of_element_located((By.ID, "mindbody_branded_web_cart_modal"))
-                    )
-
-                    # Switch to iframe
-                    driver.switch_to.frame("mindbody_branded_web_cart_modal")
-                    print("Switched to iframe.", file=sys.stderr, flush=True)
-
-                    # Click confirm button
-                    confirm_button = WebDriverWait(driver, 20).until(
-                        EC.element_to_be_clickable((By.CLASS_NAME, "cart-cta-disable-me-on-click"))
-                    )
-                    confirm_button.click()
-                    print("Clicked 'Confirm' button.", file=sys.stderr, flush=True)
-                    time.sleep(10)
-
-                    # Switch back to main content
-                    driver.switch_to.default_content()
-                    print("Switched back to main page context.", file=sys.stderr, flush=True)
-
-                    return True  # Booking complete
-
-            except Exception as e:
-                print(f"Error processing session: {e}", file=sys.stderr, flush=True)
-
-        print(f"No booking available for {selected_date} at {selected_time}.", file=sys.stderr, flush=True)
-        return False
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr, flush=True)
-        return False
-
-
-def check_and_book_loop():
-    # Create a placeholder widget to show status updates
-    status_placeholder = st.empty()
-    status_placeholder.info("Starting to monitor the schedule... Press Ctrl+C to stop.")
-    while True:
-        # Ensure the user is logged in
-        confirm_logged_in()
-        
-        # Update status before each check
-        status_placeholder.info("Checking for available sessions...")
-        
-        booked = check_and_book(st.session_state['selected_date_string'], st.session_state['selected_time'])
-        
-        if booked:
-            status_placeholder.success("Booking successful! Exiting script.")
-            break  # Stop after booking is complete
-
-        # Update the placeholder to show waiting status before the next check
-        status_placeholder.info("No booking available yet. Waiting 30 seconds before rechecking...")
-        time.sleep(30)  # Retry after delay
-
-
+    # Extract dates from the response
+    dates = [item['booking_date'] for item in response['Items']]
+    
+    return dates
+    
+    
 #Information for AI:
 #<div class="bw-widget__date date-2025-02-15">Saturday, February 15</div>
 #<time class="hc_starttime" datetime="2025-02-14T20:30">8:30 PM</time>
@@ -310,7 +192,7 @@ if not st.session_state['driver']:
 driver = st.session_state['driver']
 
 # Rest of your Streamlit code...
-st.title("Pilates Class Booking Bot")
+st.title("Pilates Booking Assistant")
 
 with st.form("login_form"):
     st.session_state['email'] = st.text_input(
@@ -332,11 +214,19 @@ if submit:
         print('✅Request for available sessions received', file=sys.stderr, flush=True)
         driver.get(url)
         print("✅Arrived at Derrimut Webpage", file=sys.stderr, flush=True)
+        
+        # Get upcoming booking dates from DynamoDB
+        upcoming_dates = get_upcoming_dates()
+        st.session_state['upcoming_dates'] = upcoming_dates
+        st.write("### Upcoming Booking Dates")
+        for date in st.session_state['upcoming_dates']:
+            st.write(f"- {date}")
+            
+        # Get available sessions
         with st.spinner("Fetching available sessions..."):
             available_sessions = get_available_sessions(st.session_state['email'], st.session_state['password'])
             if available_sessions:
                 st.session_state['available_sessions'] = available_sessions
-                st.success("✅Sessions fetched successfully!")
             else:
                 st.error("❌Could not fetch sessions. Please try again.")
     else:
@@ -362,9 +252,21 @@ if 'available_sessions' in st.session_state:
         selected_time = st.selectbox("Select a Time:", available_times)  # Alternative dropdown
         st.session_state['selected_time'] = selected_time
 
-        if st.button("Start Monitoring"):
+        if st.button("Schedule Booking"):
             if st.session_state['email'] and st.session_state['password'] and selected_date_string and selected_time:
-                check_and_book_loop()
+                payload = {
+                    "email": "mae.anuc@gmail.com",
+                    "password": "Mind2907",
+                    "scheduled_date_str": "2025-02-24",
+                    "scheduled_time_str": "6:30 AM"
+                }
+
+                response = requests.post(
+                    API_GATEWAY_URL,
+                    json=payload  
+                )
+                print(response.json())
+                st.success("Booking scheduled successfully")
             else:
                 st.error("Please fill in all fields")
     else:
