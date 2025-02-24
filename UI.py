@@ -5,6 +5,7 @@ import time
 import requests
 import json
 import boto3
+import pytz
 from boto3.dynamodb.conditions import Key
 from datetime import datetime, timedelta
 from selenium import webdriver
@@ -157,19 +158,29 @@ def confirm_logged_in():
 
 
 def get_upcoming_dates():
-    # Format matching DynamoDB partition key
-    start_date = datetime.now().strftime('%Y-%m-%d %I:%M %p')
-    end_date = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %I:%M %p')
+    # Set timezone to Australia/Melbourne
+    melbourne_tz = pytz.timezone('Australia/Melbourne')
+    current_time = datetime.now(melbourne_tz)
+    
+    # Format booking_date (partition key) as YYYY-MM-DD
+    start_date = current_time.strftime('%Y-%m-%d')
+    end_date = (current_time + timedelta(days=30)).strftime('%Y-%m-%d')
+    
+    # Format booking_timestamp (sort key) as YYYY-MM-DD H:MM AM/PM
+    start_timestamp = current_time.strftime('%Y-%m-%d %I:%M %p')
+    
+    print(f"Querying between: {start_date} ({start_timestamp}) and {end_date}")
 
-    print(f"Querying between: {start_date} and {end_date}")
-
-    # Query DynamoDB
+    # Query using partition key (booking_date) and sort key (booking_timestamp)
     response = table.query(
-        KeyConditionExpression=Key('booking_timestamp').between(start_date, end_date)
+        KeyConditionExpression=(
+            Key('booking_date').between(start_date, end_date) &
+            Key('booking_timestamp').gte(start_timestamp)
+        )
     )
     
     # Extract dates from the response
-    dates = [item['booking_date'] for item in response['Items']]
+    dates = [item['booking_timestamp'] for item in response['Items']]
     
     return dates
     

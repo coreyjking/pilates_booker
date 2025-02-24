@@ -6,3 +6,4 @@ fastapi
 pydantic
 requests
 boto3
+pytz
