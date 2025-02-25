@@ -18,131 +18,154 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.core.os_manager import ChromeType
 from webdriver_manager.chrome import ChromeDriverManager
 
+# --------------------------------------------------------------------------------
+# CONFIG
+# --------------------------------------------------------------------------------
+
 API_GATEWAY_URL = "https://0wk32adhz8.execute-api.ap-southeast-2.amazonaws.com/pilatesStage/schedule_booker"
 url = "https://www.derrimut247.com.au/pages/reformer-pilates-thomastown"
+
+# Load secrets for AWS from Streamlit secrets
 aws_access_key = st.secrets["aws"]["aws_access_key_id"]
 aws_secret_key = st.secrets["aws"]["aws_secret_access_key"]
 region = st.secrets["aws"]["region_name"]
-dynamodb = boto3.resource('dynamodb', region_name=region, aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key)
+
+# DynamoDB table
+dynamodb = boto3.resource(
+    'dynamodb',
+    region_name=region,
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_key
+)
 table = dynamodb.Table('pilatesBookings')
-    
-### INSTALL THE WEBDRIVER
+
+# --------------------------------------------------------------------------------
+# SELENIUM SETUP
+# --------------------------------------------------------------------------------
+
 @st.cache_resource
 def get_webdriver():
+    """Initialize the Chrome WebDriver with headless options."""
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run without a UI
-    chrome_options.add_argument("--no-sandbox")  
-    chrome_options.add_argument("--disable-dev-shm-usage")  
-    #chrome_options.add_argument("--disable-gpu")  # Optional: Improve performance
-    #chrome_options.add_argument("--window-size=1920x1080")  # Ensure consistent rendering
-
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
     try:
         service = Service(
-        ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+            ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
         )
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        st.session_state['driver'] = driver
         return driver
     except Exception as e:
         st.error(f"Error initializing Selenium WebDriver: {e}")
         return None
 
+# --------------------------------------------------------------------------------
+# SCRAPE: GET AVAILABLE SESSIONS
+# --------------------------------------------------------------------------------
 
 def get_available_sessions(email, password):
     """
-    Collect all available days (date-YYYY-MM-DD) and their session times
-    from the webpage, and return them in a list of tuples.
-
-    Example return value:
-    [
-        ("2025-01-20", ["5:00 AM", "5:30 AM", ...]),
-        ("2025-01-21", [...]),
+    Collects available days and times from the webpage.
+    
+    Returns a list of tuples: 
+      [
+        ( "2025-02-15", ["5:00 AM","5:30 AM"], "Saturday, February 15" ),
         ...
-    ]
+      ]
     """
-
-    # Give time for the page to load and scroll down
+    driver = st.session_state['driver']
+    
+    # Let the page load
     time.sleep(5)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     
-    # Wait for at least one date element to appear
+    # Wait for date elements
     WebDriverWait(driver, 30).until(
         EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'bw-widget__date')]"))
     )
-
-    # Find all date elements
+    
     date_elements = driver.find_elements(By.XPATH, "//div[contains(@class, 'bw-widget__date')]")
     st.session_state['date_elements'] = date_elements
+    
     available_sessions = []
-
+    
     for i, date_elem in enumerate(date_elements):
-        
-        # Extract the date text
+        # Example of class: "bw-widget__date date-2025-02-15"
         elem_classes = date_elem.get_attribute("class")
-        elem_classes_split = elem_classes.split()
-        class_date = elem_classes_split[1]
+        class_parts = elem_classes.split()
+        if len(class_parts) < 2:
+            continue
         
-        the_date = date_elem.text.strip()
-
-        if not the_date:
-            continue  # Skip if no valid date found
-
-        # Identify the XPath for the **current date section**
+        # e.g. "date-2025-02-15"
+        class_date = class_parts[1]
+        # Raw date: "2025-02-15"
+        raw_date = class_date.replace("date-", "").strip()
+        
+        # User-friendly text: e.g. "Saturday, February 15"
+        user_facing_text = date_elem.text.strip()
+        
+        if not raw_date:
+            continue
+        
+        # Get sessions
         date_xpath = f"(//div[contains(@class, 'bw-widget__date')])[{i+1}]"
-
-        # Locate only the sessions **following this specific date**
-        session_elements = driver.find_elements(By.XPATH, f"{date_xpath}/following-sibling::div[contains(@class, 'bw-session')]")
-
+        session_elements = driver.find_elements(
+            By.XPATH, f"{date_xpath}/following-sibling::div[contains(@class, 'bw-session')]"
+        )
+        
         times_for_date = []
         for session in session_elements:
             try:
-                # Extract session start time
-                time_element = session.find_element(By.CLASS_NAME, "hc_starttime")
-                session_time = time_element.text.strip()
-                times_for_date.append(session_time)
-            except Exception as e:
-                print(f"Skipping session due to error: {e}", file=sys.stderr, flush=True)
-
-        # Store only if there are available times
+                time_elem = session.find_element(By.CLASS_NAME, "hc_starttime")
+                times_for_date.append(time_elem.text.strip())
+            except Exception as ex:
+                print(f"Skipping session due to error: {ex}", file=sys.stderr, flush=True)
+        
         if times_for_date:
-            available_sessions.append((the_date, times_for_date, class_date))
-
+            # store (raw_date, times_for_date, user_facing_text)
+            available_sessions.append((raw_date, times_for_date, user_facing_text))
+    
     return available_sessions
 
-    
+# --------------------------------------------------------------------------------
+# LOGIN CHECK
+# --------------------------------------------------------------------------------
+
 def confirm_logged_in():
-    """Ensure the user is logged in. If not, log in automatically."""
+    """
+    Checks if user is logged in, if not logs them in.
+    """
+    driver = st.session_state['driver']
     try:
-        # Scroll to top of page and wait for elements to load
         driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(2)  # Allow time for any animations to complete
+        time.sleep(2)
         
-        # Wait for account button to be clickable
         account_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CLASS_NAME, "bw-header__account-link"))
         )
         
         if account_button.text.strip() == "My Account":
             print("Opening My Account.", file=sys.stderr, flush=True)
-            # Use JavaScript click as a fallback if regular click is intercepted
             driver.execute_script("arguments[0].click();", account_button)
             time.sleep(5)
             
-            # Check if login form appears (indicating logged out)
             if driver.find_elements(By.ID, "username"):
                 print("Not logged in. Logging in now...", file=sys.stderr, flush=True)
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username")))
-
-                # Fill login details
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "username"))
+                )
                 username_input = driver.find_element(By.ID, "username")
                 password_input = driver.find_element(By.ID, "password")
-                submit_button = driver.find_element(By.XPATH, "/html/body/div[1]/span/div/div/div/main/div/div/form/section[2]/button")
-
+                submit_button = driver.find_element(
+                    By.XPATH, "/html/body/div[1]/span/div/div/div/main/div/div/form/section[2]/button"
+                )
+                
                 username_input.send_keys(st.session_state['email'])
                 password_input.send_keys(st.session_state['password'])
                 submit_button.click()
                 time.sleep(4)
-
                 print("Logged in successfully.", file=sys.stderr, flush=True)
                 driver.get(url)
             else:
@@ -150,137 +173,135 @@ def confirm_logged_in():
                 driver.refresh()
                 driver.get(url)
         else:
-            print("Login button not found. Trying to refresh and check again.", file=sys.stderr, flush=True)
+            print("Login button not found. Refreshing...", file=sys.stderr, flush=True)
             driver.get(url)
     except Exception as e:
         print(f"Login verification error: {e}", file=sys.stderr, flush=True)
         driver.get(url)
 
+# --------------------------------------------------------------------------------
+# OPTIONAL: GET UPCOMING DATES FROM DYNAMO (not mandatory for the question)
+# --------------------------------------------------------------------------------
 
 def get_upcoming_dates():
-    # Set timezone to Australia/Melbourne
+    """
+    Example: Queries future bookings from DynamoDB by email & date range
+    """
     melbourne_tz = pytz.timezone('Australia/Melbourne')
     current_time = datetime.now(melbourne_tz)
     
-    # Format scheduled_date (sort key) as YYYY-MM-DD
     start_date = current_time.strftime('%Y-%m-%d')
-    end_date = (current_time + timedelta(days=30)).strftime('%Y-%m-%d')
+    end_date   = (current_time + timedelta(days=30)).strftime('%Y-%m-%d')
     
-    print(f"Querying bookings for: {st.session_state["email"]} between {start_date} and {end_date}")
-
-    # Query using partition key (email) and sort key (scheduled_date)
+    if 'email' not in st.session_state:
+        return []
+    
+    email = st.session_state['email']
+    
+    print(f"Querying bookings for {email} between {start_date} and {end_date}")
+    
     response = table.query(
-        KeyConditionExpression=Key('email').eq(st.session_state["email"]) & Key('scheduled_date').between(start_date, end_date)
+        KeyConditionExpression=Key('email').eq(email) & 
+                               Key('scheduled_date').between(start_date, end_date)
     )
     
-    # Extract booking timestamps from the response
     dates = [item['booking_timestamp'] for item in response.get('Items', [])]
-    
     return dates
 
-    
-#Information for AI:
-#<div class="bw-widget__date date-2025-02-15">Saturday, February 15</div>
-#<time class="hc_starttime" datetime="2025-02-14T20:30">8:30 PM</time>
-#<time class="hc_endtime" datetime="2025-02-14T21:15">9:15 PM</time>
-#<div class="bw-session__staff" style>Harriet G</div>
+# --------------------------------------------------------------------------------
+# MAIN STREAMLIT APP
+# --------------------------------------------------------------------------------
 
-
-# Connect to Selenium webdriver
 if 'driver' not in st.session_state:
     st.session_state['driver'] = None
 
 if not st.session_state['driver']:
-    for attempt in range(10):  # Try up to 10 times
+    for attempt in range(10):
         try:
             st.session_state['driver'] = get_webdriver()
-            print("✅ Python connected to Selenium WebDriver successfully!", file=sys.stderr, flush=True)
-            print(st.session_state['driver'], file=sys.stderr, flush=True)
+            print("✅ Selenium started successfully!", file=sys.stderr, flush=True)
             break
         except WebDriverException:
-            print(f"❌ Python cannot connect to Selenium WebDriver. Retrying ({attempt+1}/10)...", file=sys.stderr, flush=True)
+            print(f"❌ Selenium cannot connect. Retrying {attempt+1}/10...", file=sys.stderr, flush=True)
             time.sleep(5)
     else:
-        raise RuntimeError("❌ Selenium did not start in time.", file=sys.stderr, flush=True)
-driver = st.session_state['driver']
+        raise RuntimeError("❌ Selenium did not start in time.")
 
-# Rest of your Streamlit code...
+driver = st.session_state['driver']
 st.title("Pilates Booking Assistant")
 
 with st.form("login_form"):
-    st.session_state['email'] = st.text_input(
-        "Email",
-        type="default",
-        key="email_form",
-        autocomplete="username email"
-    )
-    st.session_state['password'] = st.text_input(
-        "Password",
-        type="password",
-        key="password_form",
-        autocomplete="current-password"
-    )
+    st.session_state['email'] = st.text_input("Email", key="email_form")
+    st.session_state['password'] = st.text_input("Password", type="password", key="password_form")
     submit = st.form_submit_button("Check Available Sessions")
 
 if submit:
     if st.session_state['email'] and st.session_state['password']:
-        print('✅Request for available sessions received', file=sys.stderr, flush=True)
+        print("✅ Request for available sessions received", file=sys.stderr, flush=True)
         driver.get(url)
-        print("✅Arrived at Derrimut Webpage", file=sys.stderr, flush=True)
+        print("✅ Arrived at Derrimut Webpage", file=sys.stderr, flush=True)
         
-        # Get upcoming booking dates from DynamoDB
+        # (Optional) Confirm login
+        confirm_logged_in()
+        
+        # (Optional) Get upcoming bookings from Dynamo
         upcoming_dates = get_upcoming_dates()
         st.session_state['upcoming_dates'] = upcoming_dates
-        st.write("### Upcoming Booking Dates")
-        for date in st.session_state['upcoming_dates']:
-            st.write(f"- {date}")
-            
-        # Get available sessions
+        st.write("### Upcoming Booking Dates (Dynamo)")
+        for d in upcoming_dates:
+            st.write(f"- {d}")
+        
+        # Now get sessions from the website
         with st.spinner("Fetching available sessions..."):
-            available_sessions = get_available_sessions(st.session_state['email'], st.session_state['password'])
-            if available_sessions:
-                st.session_state['available_sessions'] = available_sessions
+            sessions = get_available_sessions(st.session_state['email'], st.session_state['password'])
+            if sessions:
+                st.session_state['available_sessions'] = sessions
             else:
-                st.error("❌Could not fetch sessions. Please try again.")
+                st.error("❌ Could not fetch sessions. Please try again.")
     else:
         st.error("Please enter email and password")
 
+# After we have available_sessions
 if 'available_sessions' in st.session_state:
-    # Extract unique available dates and sort them
-    available_dates = [date for date, _, _ in st.session_state['available_sessions']]
-
-    # Use a radio button for selecting a date
-    selected_date_string = st.radio("Select a Date:", available_dates)
-    st.session_state['selected_date_string'] = selected_date_string
+    # Build a date_map: user_facing_label -> raw_date
+    sessions = st.session_state['available_sessions']
+    # e.g. sessions = [("2025-02-15", ["5:00 AM","5:30 AM"], "Saturday, February 15"), ...]
     
-    # Get available times for the selected date
-    available_times = next(
-        (times for date, times, _ in st.session_state['available_sessions'] if date == selected_date_string), 
-        []
-    )
-
-    if available_times:
-        # Show either radio buttons or a select box for time selection
-        # selected_time = st.radio("Select a Time:", available_times)  # Use radio buttons
-        selected_time = st.selectbox("Select a Time:", available_times)  # Alternative dropdown
-        st.session_state['selected_time'] = selected_time
-
-        if st.button("Schedule Booking"):
-            if st.session_state['email'] and st.session_state['password'] and selected_date_string and selected_time:
-                payload = {
-                    "email": "mae.anuc@gmail.com",
-                    "password": "Mind2907",
-                    "scheduled_date_str": selected_date_string,
-                    "scheduled_time_str": selected_time
-                }
-
-                response = requests.post(
-                    API_GATEWAY_URL,
-                    json=payload  
-                )
-                print(response.json())
-                st.success("Booking scheduled successfully")
-            else:
-                st.error("Please fill in all fields")
+    # We want to display user_facing_text but store the raw date
+    date_map = {}
+    for (raw_date, times, user_text) in sessions:
+        date_map[user_text] = raw_date
+    
+    if date_map:
+        selected_label = st.radio("Select a Date:", list(date_map.keys()))
+        selected_raw_date = date_map[selected_label]  # "2025-02-15"
+        
+        # Find the times for this raw date
+        available_times = next(
+            (t_list for (rd, t_list, utxt) in sessions if rd == selected_raw_date),
+            []
+        )
+        
+        if available_times:
+            selected_time = st.selectbox("Select a Time:", available_times)
+            st.session_state['selected_time'] = selected_time
+            
+            if st.button("Schedule Booking"):
+                if st.session_state['email'] and st.session_state['password'] and selected_raw_date and selected_time:
+                    payload = {
+                        "email": st.session_state['email'],
+                        "password": st.session_state['password'],
+                        # Use the raw date internally
+                        "scheduled_date_str": selected_raw_date,
+                        "scheduled_time_str": selected_time
+                    }
+                    
+                    response = requests.post(API_GATEWAY_URL, json=payload)
+                    print(response.json())
+                    st.success("Booking scheduled successfully!")
+                else:
+                    st.error("Please fill in all fields")
+        else:
+            st.warning("No sessions available for that date.")
     else:
-        st.warning("No sessions available for the selected date.")
+        st.info("No dates found to display.")
