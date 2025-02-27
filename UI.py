@@ -79,14 +79,14 @@ def get_available_sessions(email, password):
     
     # Let the page load
     time.sleep(5)
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    st.session_state["driver"].execute_script("window.scrollTo(0, document.body.scrollHeight);")
     
     # Wait for date elements
     WebDriverWait(driver, 30).until(
         EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'bw-widget__date')]"))
     )
     
-    date_elements = driver.find_elements(By.XPATH, "//div[contains(@class, 'bw-widget__date')]")
+    date_elements = st.session_state["driver"].find_elements(By.XPATH, "//div[contains(@class, 'bw-widget__date')]")
     st.session_state['date_elements'] = date_elements
     
     available_sessions = []
@@ -111,7 +111,7 @@ def get_available_sessions(email, password):
         
         # Get sessions
         date_xpath = f"(//div[contains(@class, 'bw-widget__date')])[{i+1}]"
-        session_elements = driver.find_elements(
+        session_elements = st.session_state["driver"].find_elements(
             By.XPATH, f"{date_xpath}/following-sibling::div[contains(@class, 'bw-session')]"
         )
         
@@ -137,9 +137,8 @@ def confirm_logged_in():
     """
     Checks if user is logged in, if not logs them in.
     """
-    driver = st.session_state['driver']
     try:
-        driver.execute_script("window.scrollTo(0, 0);")
+        st.session_state["driver"].execute_script("window.scrollTo(0, 0);")
         time.sleep(2)
         
         account_button = WebDriverWait(driver, 10).until(
@@ -148,17 +147,17 @@ def confirm_logged_in():
         
         if account_button.text.strip() == "My Account":
             print("Opening My Account.", file=sys.stderr, flush=True)
-            driver.execute_script("arguments[0].click();", account_button)
+            st.session_state["driver"].execute_script("arguments[0].click();", account_button)
             time.sleep(5)
             
-            if driver.find_elements(By.ID, "username"):
+            if st.session_state["driver"].find_elements(By.ID, "username"):
                 print("Not logged in. Logging in now...", file=sys.stderr, flush=True)
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.ID, "username"))
                 )
-                username_input = driver.find_element(By.ID, "username")
-                password_input = driver.find_element(By.ID, "password")
-                submit_button = driver.find_element(
+                username_input = st.session_state["driver"].find_element(By.ID, "username")
+                password_input = st.session_state["driver"].find_element(By.ID, "password")
+                submit_button = st.session_state["driver"].find_element(
                     By.XPATH, "/html/body/div[1]/span/div/div/div/main/div/div/form/section[2]/button"
                 )
                 
@@ -167,17 +166,17 @@ def confirm_logged_in():
                 submit_button.click()
                 time.sleep(4)
                 print("Logged in successfully.", file=sys.stderr, flush=True)
-                driver.get(url)
+                st.session_state["driver"].get(url)
             else:
                 print("Already logged in.", file=sys.stderr, flush=True)
-                driver.refresh()
-                driver.get(url)
+                st.session_state["driver"].refresh()
+                st.session_state["driver"].get(url)
         else:
             print("Login button not found. Refreshing...", file=sys.stderr, flush=True)
-            driver.get(url)
+            st.session_state["driver"].get(url)
     except Exception as e:
         print(f"Login verification error: {e}", file=sys.stderr, flush=True)
-        driver.get(url)
+        st.session_state["driver"].get(url)
 
 # --------------------------------------------------------------------------------
 # OPTIONAL: GET UPCOMING DATES FROM DYNAMO (not mandatory for the question)
@@ -238,7 +237,7 @@ with st.form("login_form"):
 if submit:
     if st.session_state['email'] and st.session_state['password']:
         print("✅ Request for available sessions received", file=sys.stderr, flush=True)
-        driver.get(url)
+        st.session_state["driver"].get(url)
         print("✅ Arrived at Derrimut Webpage", file=sys.stderr, flush=True)
         
         # (Optional) Confirm login
