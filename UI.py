@@ -56,7 +56,7 @@ def get_webdriver():
             ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
         )
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        return driver
+        st.session_state['driver'] = driver
     except Exception as e:
         st.error(f"Error initializing Selenium WebDriver: {e}")
         return None
@@ -218,7 +218,7 @@ if 'driver' not in st.session_state:
 if not st.session_state['driver']:
     for attempt in range(10):
         try:
-            st.session_state['driver'] = get_webdriver()
+            get_webdriver()
             print("✅ Selenium started successfully!", file=sys.stderr, flush=True)
             break
         except WebDriverException:
