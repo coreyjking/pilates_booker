@@ -75,8 +75,6 @@ def get_available_sessions(email, password):
         ...
       ]
     """
-    driver = st.session_state['driver']
-    
     # Let the page load
     time.sleep(5)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
